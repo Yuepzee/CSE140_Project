@@ -71,9 +71,9 @@ def Fetch():
     print(f"Fetched instruction at PC={pc-4}: {instruction}")
     return instruction
 
-def Decode(index):
+def Decode(instruction):
 
-    intermediary = machine_to_binary.decode_helper(rf[index])
+    intermediary = machine_to_binary.decode_helper(instruction)
 
     ControlUnit(intermediary["Opcode"], intermediary["Funct3"])
 
