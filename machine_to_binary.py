@@ -73,9 +73,10 @@ def binary_to_hex(input):
 
 #For the implementation, the work on the R-type and I-type implementation was done by Ivan Vargas, and the work for the S, SB and U type instructions were done by Yuepeng Lee
 
-def decode(instruction):
+def decode_helper(instruction):
   information = {
     #Put in order of printing
+    "Opcode": None,
     "Operation": None,
     "Rs1": None,
     "Rs2": None,
@@ -85,6 +86,8 @@ def decode(instruction):
     "Immediate": None
   }
   opcode = instruction[25:32]
+
+  information["Opcode"] = opcode
 
   if opcode in instruction_set:
     #print("\n")
@@ -166,15 +169,4 @@ def decode(instruction):
       print(key + ": " + information[key])
   print("\n")
 
-while(True):
-  print("Enter an instruction:" + "\n")
-  instruction = input()
-  print("")
-  if len(instruction) != 32:
-    print("Invalid Input")
-    break
-  else:
-    decode(instruction)
-
-
-print("Ending Program")
+  return information
