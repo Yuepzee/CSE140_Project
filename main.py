@@ -22,7 +22,7 @@ MemtoReg = 0
 ALUOp = 0
 ALUSrc = 0
 
-# Initialize rf and memory as specified
+# rf and memory as specified
 def initialize():
     global rf, d_mem
     rf[1] = 0x20  # x1
@@ -30,7 +30,7 @@ def initialize():
     rf[10] = 0x70  # x10
     rf[11] = 0x4   # x11
     
-    # Memory addresses are divided by 4 since each entry is 4 bytes
+    # Memory addresses (4 bytes)
     d_mem[0x70 // 4] = 0x5
     d_mem[0x74 // 4] = 0x10
 
@@ -43,18 +43,11 @@ def load_program(file_name):
         
         with open(file_path, 'r') as f:
             instructions = [line.strip() for line in f.readlines()]
-        print(f"Successfully loaded program from {file_path}")
     except FileNotFoundError:
-        print(f"Error: The file '{file_name}' was not found in directory: {script_dir}")
-        print("Please ensure:")
-        print(f"1. The file '{file_name}' exists in the same directory as this script")
-        print(f"2. The filename is spelled correctly (including .txt extension)")
-        print("\nFiles found in directory:")
-        for f in os.listdir(script_dir):
-            print(f"  - {f}")
+        print("Error no files")
         exit(1)
 
-def Fetch():
+def Fetch(): #explain what the pc implemention is
     global pc, next_pc, branch_target
     if pc // 4 >= len(instructions):
         print("Program completed")
@@ -77,29 +70,62 @@ def Decode(instruction):
 
     ControlUnit(intermediary["Opcode"], intermediary["Funct3"])
 
+    #where do we pull the rf vaules from?
+
 def Execute(decoded):
-    return 0
+    global alu_zero, branch_target, pc
+
+    # val1 = decoded["val1"]
+    # val2 = decoded["val2"]
+    # alu_ctrl = decoded["alu_ctrl"]
+
+    # result = 0
+    # if alu_ctrl == "0000":
+    #     result = val1 & val2
+    # elif alu_ctrl == "0010":
+    #     result = val1 + val2
+    # # Add more cases...
+
+    # alu_zero = 1 if result == 0 else 0
+
+    # if decoded.get("type") == "beq":
+    #     offset = decoded["imm"] << 1
+    #     branch_target = pc + 4 + offset
+
+    # return result
+
+    # #update branch_target adress
+    # return 0
 
 
 def Mem(decoded, alu_result):
-    if decoded["type"] == "lw":
+    if decoded["Operation"] == "lw":
         mem_addr = alu_result // 4
         return d_mem[mem_addr]
-    elif decoded["type"] == "sw":
+    elif decoded["Operation"] == "sw":
         mem_addr = alu_result // 4
         d_mem[mem_addr] = rf[decoded["rs2"]]
-        print(f"Memory[{hex(alu_result)}] = {rf[decoded['rs2']]}")
-    return alu_result
+        print(f"memory {hex(alu_result)} is modified to {hex(rf[decoded['rs2']])}")
+    #return alu_result
 
 def Writeback(decoded, result):
     global total_clock_cycles
-    
-    if decoded["type"] in ["R", "I", "lw", "jal"] and decoded.get("rd", 0) != 0:
-        rf[decoded["rd"]] = result
-        print(f"x{decoded['rd']} = {hex(result)}")
-    
     total_clock_cycles += 1
-    print(f"total_clock_cycles {total_clock_cycles}: pc = {hex(pc)}")
+    print(f"total_clock_cycles {total_clock_cycles}:")
+    
+    
+    if decoded["Operation"] in ["R", "I", "lw", "jal"] and decoded.get("rd", 0) != 0:
+        rf[decoded["rd"]] = result
+        print(f"x{decoded['rd']} is modified to {hex(result)}")
+    
+    if decoded["Operation"] == "sw":
+        Mem(decoded, result)
+    elif decoded["Operation"] == "lw":
+        word = Mem(decoded, result)
+        rf[decoded["rd"]] = word
+
+
+    print(f"pc is modified to {hex(pc)}")
 
 def ControlUnit(opcode, funct3):
     global RegWrite, Branch, MemRead, MemWrite, MemtoReg, ALUOp, ALUSrc
@@ -123,7 +149,7 @@ def ControlUnit(opcode, funct3):
     elif opcode == "0100011":  # sw
         MemWrite = 1
         ALUSrc = 1
-    elif opcode == "0010011":  # I-type (addi, andi, ori)
+    elif opcode == "0010011":  # I-type
         RegWrite = 1
         ALUSrc = 1
         ALUOp = 0b11
@@ -147,22 +173,15 @@ def run_instruction():
     
     return True
 
-def main():
+def main(): # for debugging reasons
+
     initialize()
     print("RISC-V CPU Simulator")
     
-    # List available files
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    print("\nAvailable files in directory:")
-    for i, f in enumerate(os.listdir(script_dir)):
-        if f.endswith('.txt'):
-            print(f"{i+1}. {f}")
-    
-    filename = input("\nEnter program file name (e.g., sample_part1.txt): ")
+    filename = input("\nEnter program file name (sample_part1.txt): ")
     load_program(filename)
     
     while True:
-        print("\nOptions:")
         print("1. Run next instruction")
         print("2. Run all instructions")
         print("3. Show register")
