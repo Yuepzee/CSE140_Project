@@ -15,12 +15,13 @@ d_mem = [0] * 32  # Data memory (32 entries)
 
 # Control signals
 RegWrite = 0
-Branch = 0
 MemRead = 0
 MemWrite = 0
-MemtoReg = 0
-ALUOp = 0
+Branch = 0
 ALUSrc = 0
+MemtoReg = 0
+ALUOp = 0  # 2-bit value for ALU control logic
+alu_ctrl = 0  # Actual operation for ALU (e.g., add/sub/etc.)
 
 # rf and memory as specified
 def initialize():
@@ -34,6 +35,7 @@ def initialize():
     d_mem[0x70 // 4] = 0x5
     d_mem[0x74 // 4] = 0x10
 
+#=====================================================================
 
 def load_program(file_name):
     global instructions
@@ -46,6 +48,8 @@ def load_program(file_name):
     except FileNotFoundError:
         print("Error no files")
         exit(1)
+
+#=====================================================================
 
 def Fetch(): #explain what the pc implemention is
     global pc, next_pc, branch_target
@@ -64,39 +68,40 @@ def Fetch(): #explain what the pc implemention is
     print(f"Fetched instruction at PC={pc-4}: {instruction}")
     return instruction
 
+#=====================================================================
+
 def Decode(instruction):
 
-    intermediary = machine_to_binary.decode_helper(instruction)
+    return machine_to_binary.decode_helper(instruction)
 
-    ControlUnit(intermediary["Opcode"], intermediary["Funct3"])
+    #ControlUnit(intermediary["Opcode"], intermediary["Funct3"], intermediary["Funct7"])
+#=====================================================================
 
-    #where do we pull the rf vaules from?
+def Execute(rs1_val, rs2_val, imm):
+    global ALUOp, ALUSrc
 
-def Execute(decoded):
-    global alu_zero, branch_target, pc
+    if ALUSrc:
+        second_operand = imm
+    else:
+        second_operand = rs2_val
 
-    # val1 = decoded["val1"]
-    # val2 = decoded["val2"]
-    # alu_ctrl = decoded["alu_ctrl"]
+    if ALUOp == 0b0000:  # AND
+        result = rs1_val and second_operand
+    elif ALUOp == 0b0001:  # OR
+        result = rs1_val or second_operand
+    elif ALUOp == 0b0010:  # ADD
+        result = rs1_val + second_operand
+    elif ALUOp == 0b0110:  # SUB
+        result = rs1_val - second_operand
+    elif ALUOp == 0b0111:  # SLT
+        result = int(rs1_val < second_operand)
+    else:
+        result = 0
 
-    # result = 0
-    # if alu_ctrl == "0000":
-    #     result = val1 & val2
-    # elif alu_ctrl == "0010":
-    #     result = val1 + val2
-    # # Add more cases...
+    print(f"successful Execute")
+    return result
 
-    # alu_zero = 1 if result == 0 else 0
-
-    # if decoded.get("type") == "beq":
-    #     offset = decoded["imm"] << 1
-    #     branch_target = pc + 4 + offset
-
-    # return result
-
-    # #update branch_target adress
-    # return 0
-
+#=====================================================================
 
 def Mem(decoded, alu_result):
     if decoded["Operation"] == "lw":
@@ -107,6 +112,8 @@ def Mem(decoded, alu_result):
         d_mem[mem_addr] = rf[decoded["rs2"]]
         print(f"memory {hex(alu_result)} is modified to {hex(rf[decoded['rs2']])}")
     #return alu_result
+
+#=====================================================================
 
 def Writeback(decoded, result):
     global total_clock_cycles
@@ -127,35 +134,81 @@ def Writeback(decoded, result):
 
     print(f"pc is modified to {hex(pc)}")
 
-def ControlUnit(opcode, funct3):
-    global RegWrite, Branch, MemRead, MemWrite, MemtoReg, ALUOp, ALUSrc
-    
+#=====================================================================
+
+def ALUControl(funct3: str, funct7: str) -> int: # remember to change these to 2 bit formate
+    if funct3 == "000":
+        if funct7 == "0000000":
+            return 0
+        elif funct7 == "0100000":
+            return 1
+    elif funct3 == "111":
+        return 2
+    elif funct3 == "110":
+        return 3
+    return 0  # default to ADD
+
+#=====================================================================
+
+def ControlUnit(opcode, funct3, funct7):
+    global RegWrite, MemRead, MemWrite, Branch, ALUSrc, MemtoReg, ALUOp, alu_ctrl
+
+    # Reset all signals
     RegWrite = 0
-    Branch = 0
     MemRead = 0
     MemWrite = 0
-    MemtoReg = 0
-    ALUOp = 0b00  # 2-bit field
+    Branch = 0
     ALUSrc = 0
-    
-    if opcode == "0110011":  # R-type
-        RegWrite = 1
-        ALUOp = 0b10
-    elif opcode == "0000011":  # lw
+    MemtoReg = 0
+    ALUOp = 0
+    alu_ctrl = 0
+
+    if opcode == "0000011":  # lw
         RegWrite = 1
         MemRead = 1
-        MemtoReg = 1
         ALUSrc = 1
+        MemtoReg = 1
+
     elif opcode == "0100011":  # sw
         MemWrite = 1
         ALUSrc = 1
+
+    elif opcode == "0110011":  # R-type
+        RegWrite = 1
+        ALUOp = 2  # decides based on funct3/funct7
+
     elif opcode == "0010011":  # I-type
         RegWrite = 1
         ALUSrc = 1
-        ALUOp = 0b11
+        ALUOp = 2  # funct3
+
     elif opcode == "1100011":  # beq
         Branch = 1
-        ALUOp = 0b01
+        ALUOp = 1  #ALU sub
+
+    # Call ALU Control logic for R/I-type
+    if ALUOp == 2:
+        alu_ctrl = ALUControl(funct3, funct7)
+    elif ALUOp == 0:
+        alu_ctrl = 0 #ALU add
+    elif ALUOp == 1:
+        alu_ctrl = 1 #ALU sub
+
+#=====================================================================
+
+def remove_prefix_and_convert(s: str) -> int:
+    if s is None:
+        raise ValueError("Input string cannot be None")
+    
+    # Remove the "0x" prefix (if it exists) and convert the remaining string to an integer
+    if s.startswith("0x"):
+        s = s[2:]  # Strip the first two characters
+    elif s.startswith("x"):
+        s = s[1:]  # Strip the first character ('x')
+
+    return int(s)
+
+#=====================================================================
 
 def run_instruction():
     instr = Fetch()
@@ -166,12 +219,30 @@ def run_instruction():
     if not decoded:
         return False
     
-    ControlUnit(decoded["opcode"], decoded.get("funct3", "000"))
-    alu_result = Execute(decoded)
+    ControlUnit(decoded["Opcode"], decoded["Funct3"], decoded["Funct7"])
+
+    # Ensure decoded values are not None
+    rs1_value = decoded.get("Rs1", None)
+    rs2_value = decoded.get("Rs2", None)
+    
+    if rs1_value is None or rs2_value is None:
+        print("Error: Rs1 or Rs2 is None.")
+        return False
+    
+    rs1_index = remove_prefix_and_convert(rs1_value)
+    rs2_index = remove_prefix_and_convert(rs2_value)
+    
+    rs1_val = rf[rs1_index]
+    rs2_val = rf[rs2_index]
+    imm = decoded["Immediate"]
+
+    alu_result = Execute(rs1_val, rs2_val, imm)
     mem_result = Mem(decoded, alu_result)
     Writeback(decoded, mem_result)
     
     return True
+
+
 
 def main(): # for debugging reasons
 
