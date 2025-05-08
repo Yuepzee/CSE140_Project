@@ -109,7 +109,7 @@ def Mem(decoded, alu_result):
         mem_addr = alu_result // 4
         rs2_index = int(decoded["Rs2"][1:])
         d_mem[mem_addr] = rf[rs2_index]
-        print(f"Memory write: address {hex(alu_result)} modified to {hex(rf[rs2_index])}")
+        # Print is moved to Writeback for consistent formatting
     
     # Always return alu_result for non-load operations
     return alu_result
@@ -130,6 +130,12 @@ def Writeback(decoded, result):
             rd_index = int(decoded["Rd"][1:])  # Extract register number
             rf[rd_index] = result
             print(f"{decoded['Rd']} is modified to {hex(result)}")
+    
+    # Handle memory operations
+    if decoded["Operation"] == "sw":
+        alu_result = result
+        rs2_index = int(decoded["Rs2"][1:])
+        print(f"memory {hex(alu_result)} is modified to {hex(rf[rs2_index])}")
 
 #=====================================================================
 
@@ -228,11 +234,11 @@ def update_pc():
     
     if Branch and alu_zero:
         pc = branch_target
-        #print(f"Branch taken: PC updated to {hex(branch_target)}")
+        print(f"pc is modified to {hex(pc)}")
     else:
         pc = next_pc
-        print(f"PC updated to {hex(next_pc)}")
-        print()
+        print(f"pc is modified to {hex(pc)}")
+    print()  # Add a blank line after each instruction cycle
 
 #=====================================================================
 
@@ -282,8 +288,8 @@ def main():
     initialize()
     print("RISC-V CPU Simulator")
     
-    #filename = input("\nEnter program file name (sample_part1.txt): ")
-    load_program("sample_part1.txt")
+    #filename = input("\nEnter program file name (sample_part2.txt): ")
+    load_program("sample_part2.txt")
     
     while True:
         if not run_instruction():
