@@ -4,7 +4,6 @@ import machine_to_binary
 
 # Global variables
 pc = 0
-#VVV maybe could be changed
 next_pc = 0
 branch_target = 0
 alu_zero = 0
@@ -23,7 +22,6 @@ MemtoReg = 0
 ALUOp = 0  # 2-bit value for ALU control logic
 alu_ctrl = 0  # Actual operation for ALU (e.g., add/sub/etc.)
 
-# rf and memory as specified
 def initialize():
     global rf, d_mem
     rf[1] = 0x20  # x1
@@ -39,6 +37,8 @@ def initialize():
 
 def load_program(file_name):
     global instructions
+
+    #REMOVE EXCEPTION HANDLING HERE
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         file_path = os.path.join(script_dir, file_name)
@@ -46,59 +46,56 @@ def load_program(file_name):
         with open(file_path, 'r') as f:
             instructions = [line.strip() for line in f.readlines()]
     except FileNotFoundError:
-        print("Error no files")
+        print(f"Error: File '{file_name}' not found")
         exit(1)
 
 #=====================================================================
 
-def Fetch(): #explain what the pc implemention is
-    global pc, next_pc, branch_target
+def Fetch():
+    global pc, next_pc
     if pc // 4 >= len(instructions):
-        print("Program completed")
         return None
     
     instruction = instructions[pc // 4]
     next_pc = pc + 4
     
-    if alu_zero and Branch:
-        pc = branch_target
-    else:
-        pc = next_pc
-    
-    print(f"Fetched instruction at PC={pc-4}: {instruction}")
     return instruction
 
 #=====================================================================
 
 def Decode(instruction):
-
     return machine_to_binary.decode_helper(instruction)
 
-    #ControlUnit(intermediary["Opcode"], intermediary["Funct3"], intermediary["Funct7"])
 #=====================================================================
 
 def Execute(rs1_val, rs2_val, imm):
-    global ALUOp, ALUSrc
-
+    global ALUOp, ALUSrc, alu_zero, branch_target
+    
     if ALUSrc:
         second_operand = imm
     else:
         second_operand = rs2_val
 
+    # Default result
+    result = 0
+    
     if ALUOp == 0b0000:  # AND
-        result = rs1_val and second_operand
+        result = rs1_val & second_operand
     elif ALUOp == 0b0001:  # OR
-        result = rs1_val or second_operand
+        result = rs1_val | second_operand
     elif ALUOp == 0b0010:  # ADD
         result = rs1_val + second_operand
     elif ALUOp == 0b0110:  # SUB
         result = rs1_val - second_operand
+        # Set alu_zero for branch instructions
+        alu_zero = (result == 0)
     elif ALUOp == 0b0111:  # SLT
-        result = int(rs1_val < second_operand)
-    else:
-        result = 0
-
-    print(f"successful Execute")
+        result = 1 if rs1_val < second_operand else 0
+    
+    # Calculate branch target for branch instructions
+    if Branch:
+        branch_target = pc + imm
+    
     return result
 
 #=====================================================================
@@ -106,47 +103,50 @@ def Execute(rs1_val, rs2_val, imm):
 def Mem(decoded, alu_result):
     if decoded["Operation"] == "lw":
         mem_addr = alu_result // 4
-        return d_mem[mem_addr]
+        loaded_value = d_mem[mem_addr]
+        return loaded_value
     elif decoded["Operation"] == "sw":
         mem_addr = alu_result // 4
-        d_mem[mem_addr] = rf[decoded["rs2"]]
-        print(f"memory {hex(alu_result)} is modified to {hex(rf[decoded['rs2']])}")
-    #return alu_result
+        rs2_index = int(decoded["Rs2"][1:])
+        d_mem[mem_addr] = rf[rs2_index]
+        print(f"Memory write: address {hex(alu_result)} modified to {hex(rf[rs2_index])}")
+    
+    # Always return alu_result for non-load operations
+    return alu_result
 
 #=====================================================================
 
 def Writeback(decoded, result):
     global total_clock_cycles
     total_clock_cycles += 1
-    print(f"total_clock_cycles {total_clock_cycles}:")
+    print(f"total_clock_cycles {total_clock_cycles}")
     
+    # Get the actual instruction from Operation (not the instruction type)
+    operation = decoded["Operation"]
     
-    if decoded["Operation"] in ["R", "I", "lw", "jal"] and decoded.get("rd", 0) != 0:
-        rf[decoded["rd"]] = result
-        print(f"x{decoded['rd']} is modified to {hex(result)}")
-    
-    if decoded["Operation"] == "sw":
-        Mem(decoded, result)
-    elif decoded["Operation"] == "lw":
-        word = Mem(decoded, result)
-        rf[decoded["rd"]] = word
-
-
-    print(f"pc is modified to {hex(pc)}")
+    # Handle register writeback for arithmetic, logical, load instructions
+    if operation in ["add", "sub", "and", "or", "slt", "addi", "ori", "andi", "lw", "jal"]:
+        if decoded.get("Rd") and decoded["Rd"] != "x0":  # Don't write to x0
+            rd_index = int(decoded["Rd"][1:])  # Extract register number
+            rf[rd_index] = result
+            print(f"{decoded['Rd']} is modified to {hex(result)}")
 
 #=====================================================================
 
-def ALUControl(funct3: str, funct7: str) -> int: # remember to change these to 2 bit formate
+def ALUControl(funct3, funct7):
     if funct3 == "000":
         if funct7 == "0000000":
-            return 0
+            return 0b0010  # ADD
         elif funct7 == "0100000":
-            return 1
+            return 0b0110  # SUB
     elif funct3 == "111":
-        return 2
+        return 0b0000  # AND
     elif funct3 == "110":
-        return 3
-    return 0  # default to ADD
+        return 0b0001  # OR
+    elif funct3 == "010":
+        return 0b0111  # SLT
+    
+    return 0b0010  # Default to ADD
 
 #=====================================================================
 
@@ -168,45 +168,71 @@ def ControlUnit(opcode, funct3, funct7):
         MemRead = 1
         ALUSrc = 1
         MemtoReg = 1
+        ALUOp = 0b0010  # ADD
 
     elif opcode == "0100011":  # sw
         MemWrite = 1
         ALUSrc = 1
+        ALUOp = 0b0010  # ADD
 
     elif opcode == "0110011":  # R-type
         RegWrite = 1
-        ALUOp = 2  # decides based on funct3/funct7
+        # ALU control depends on funct3/funct7
+        if funct3 == "000" and funct7 == "0000000":
+            ALUOp = 0b0010  # ADD
+        elif funct3 == "000" and funct7 == "0100000":
+            ALUOp = 0b0110  # SUB
+        elif funct3 == "111":
+            ALUOp = 0b0000  # AND
+        elif funct3 == "110":
+            ALUOp = 0b0001  # OR
+        elif funct3 == "010":
+            ALUOp = 0b0111  # SLT
 
-    elif opcode == "0010011":  # I-type
+    elif opcode == "0010011":  # I-type (addi, etc.)
         RegWrite = 1
         ALUSrc = 1
-        ALUOp = 2  # funct3
+        ALUOp = 0b0010  # Default to ADD for addi
 
     elif opcode == "1100011":  # beq
         Branch = 1
-        ALUOp = 1  #ALU sub
+        ALUOp = 0b0110  # SUB for comparison
 
-    # Call ALU Control logic for R/I-type
-    if ALUOp == 2:
-        alu_ctrl = ALUControl(funct3, funct7)
-    elif ALUOp == 0:
-        alu_ctrl = 0 #ALU add
-    elif ALUOp == 1:
-        alu_ctrl = 1 #ALU sub
 
 #=====================================================================
 
-def remove_prefix_and_convert(s: str) -> int:
-    if s is None:
-        raise ValueError("Input string cannot be None")
+def parse_immediate(imm_str):
+    if not imm_str:
+        return 0
+        
+    # Handle format like "-5 (or 0xFFFFFFFB)"
+    if isinstance(imm_str, str) and "(" in imm_str:
+        # Extract just the decimal value before the parenthesis
+        imm_str = imm_str.split("(")[0].strip()
     
-    # Remove the "0x" prefix (if it exists) and convert the remaining string to an integer
-    if s.startswith("0x"):
-        s = s[2:]  # Strip the first two characters
-    elif s.startswith("x"):
-        s = s[1:]  # Strip the first character ('x')
+    try:
+        # Try parsing as int (works for numbers like "-5")
+        return int(imm_str)
+    except ValueError:
+        # Try parsing as hex if there's "0x"
+        if isinstance(imm_str, str) and "0x" in imm_str:
+            hex_part = imm_str.split("0x")[1].split(")")[0]
+            return int("0x" + hex_part, 16)
+    
+    return 0 
 
-    return int(s)
+#=====================================================================
+
+def update_pc():
+    global pc, next_pc, branch_target, alu_zero, Branch
+    
+    if Branch and alu_zero:
+        pc = branch_target
+        #print(f"Branch taken: PC updated to {hex(branch_target)}")
+    else:
+        pc = next_pc
+        print(f"PC updated to {hex(next_pc)}")
+        print()
 
 #=====================================================================
 
@@ -220,65 +246,48 @@ def run_instruction():
         return False
     
     ControlUnit(decoded["Opcode"], decoded["Funct3"], decoded["Funct7"])
-
-    # Ensure decoded values are not None
-    rs1_value = decoded.get("Rs1", None)
-    rs2_value = decoded.get("Rs2", None)
     
-    if rs1_value is None or rs2_value is None:
-        print("Error: Rs1 or Rs2 is None.")
-        return False
-    
-    rs1_index = remove_prefix_and_convert(rs1_value)
-    rs2_index = remove_prefix_and_convert(rs2_value)
+    # Extract register indices correctly - note that the field names are "Rs1" and "Rs2" (capital R)
+    rs1_index = int(decoded.get("Rs1", "x0")[1:]) if decoded.get("Rs1") else 0
+    rs2_index = int(decoded.get("Rs2", "x0")[1:]) if decoded.get("Rs2") else 0
     
     rs1_val = rf[rs1_index]
     rs2_val = rf[rs2_index]
-    imm = decoded["Immediate"]
-
+    
+    # Parse immediate value from the string format returned by decode_helper
+    imm = parse_immediate(decoded.get("Immediate", "0"))
+    
+    
+    # Execute stage
     alu_result = Execute(rs1_val, rs2_val, imm)
-    mem_result = Mem(decoded, alu_result)
-    Writeback(decoded, mem_result)
+    
+    # Memory stage - for load/store instructions
+    if decoded["Operation"] == "lw" or decoded["Operation"] == "sw":
+        mem_result = Mem(decoded, alu_result)
+        result_to_writeback = mem_result
+    else:
+        result_to_writeback = alu_result
+    
+    # Writeback stage
+    Writeback(decoded, result_to_writeback)
+    
+    # Update PC at the end of the cycle
+    update_pc()
     
     return True
 
+#=====================================================================
 
-
-def main(): # for debugging reasons
-
+def main():
     initialize()
     print("RISC-V CPU Simulator")
     
-    filename = input("\nEnter program file name (sample_part1.txt): ")
-    load_program(filename)
+    #filename = input("\nEnter program file name (sample_part1.txt): ")
+    load_program("sample_part1.txt")
     
     while True:
-        print("1. Run next instruction")
-        print("2. Run all instructions")
-        print("3. Show register")
-        print("4. Show memory")
-        print("5. Exit")
-        
-        choice = input("Select option: ")
-        
-        if choice == "1":
-            if not run_instruction():
+        if not run_instruction():
                 break
-        elif choice == "2":
-            while run_instruction():
-                pass
-        elif choice == "3":
-            for i, val in enumerate(rf):
-                if val != 0:
-                    print(f"x{i} = {hex(val)}")
-        elif choice == "4":
-            for i, val in enumerate(d_mem):
-                if val != 0:
-                    print(f"Mem[{hex(i*4)}] = {hex(val)}")
-        elif choice == "5":
-            break
-        else:
-            print("Invalid choice")
 
 if __name__ == "__main__":
     main()

@@ -91,7 +91,7 @@ def decode_helper(instruction):
 
   if opcode in instruction_set:
     #print("\n")
-    print("Instruction Type:" + instruction_set[opcode])
+    #print("Instruction Type:" + instruction_set[opcode])
     if instruction_set[opcode] != "UJ":
       #We need to set dictionaries so that once we've collected the Bits from the binary, we can pull from the dictionaries and retreive the string for whatever
       if instruction_set[opcode] == "SB":
@@ -164,9 +164,9 @@ def decode_helper(instruction):
   else:
     print("Invalid Opcode")
 
-  for key in information:
-    if information[key] != None:
-      print(key + ": " + information[key])
-  print("\n")
+  #for key in information:
+  #  if information[key] != None:
+  #    print(key + ": " + information[key])
+  #print("\n")
 
   return information
