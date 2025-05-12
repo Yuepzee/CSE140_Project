@@ -280,18 +280,6 @@ def parse_immediate(imm_str):
         else:
             return 0
 
-#=====================================================================
-
-def update_pc():
-    global pc, next_pc, branch_target, alu_zero, Branch, Jump
-    
-    if (Branch and alu_zero) or Jump:
-        pc = branch_target
-        print(f"pc is modified to {hex(pc)}")
-    else:
-        pc = next_pc
-        print(f"pc is modified to {hex(pc)}")
-    print()
 
 #=====================================================================
 
@@ -326,7 +314,15 @@ def run_instruction(registerName=False):
     # Writeback
     Writeback(decoded, result_to_writeback, registerName)
     
-    update_pc()
+    global pc, next_pc, branch_target, alu_zero, Branch, Jump
+    
+    if (Branch and alu_zero) or Jump:
+        pc = branch_target
+        print(f"pc is modified to {hex(pc)}")
+    else:
+        pc = next_pc
+        print(f"pc is modified to {hex(pc)}")
+    print()
     
     return True
 
